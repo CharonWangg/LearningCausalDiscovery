@@ -29,6 +29,11 @@ with known causal relations instead of being designed by a human
 specialist. Our findings promise a new approach toward improving CD 
 in neural and medical data and for the broader machine learning community.
 ## Requirements
+Clone the repo:
+```
+$ mkdir learning_causal_discovery
+$ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_causal_discovery
+```
 ### For MOS 6502 Simulation (Modified from and inspired by [Sim2600](https://github.com/ericmjonas/Sim2600)):  
 * Create a Python 2.7 env
 * Setup:
@@ -74,11 +79,6 @@ $ tar -xzvf sims.tar.gz
 │   ├── shallowmind  # deep learning tool
 ```
 ## Usage
-Clone the repo:
-```
-$ mkdir learning_causal_discovery
-$ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_causal_discovery
-```
 ### MOS 6502 Simulation
 First, to acquire the regular state sequences:
 ```
