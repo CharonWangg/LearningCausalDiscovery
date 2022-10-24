@@ -74,6 +74,11 @@ $ tar -xzvf sims.tar.gz
 │   ├── shallowmind  # deep learning tool
 ```
 ## Usage
+Clone the repo:
+```
+$ mkdir learning_causal_discovery
+$ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_causal_discovery
+```
 ### MOS 6502 Simulation
 First, to acquire the regular state sequences:
 ```
