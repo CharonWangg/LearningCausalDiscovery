@@ -103,7 +103,6 @@ def generate_csv(game, seed=42, interval=10, split=True, save_dir='.cache/sim_da
             test_index = copy.deepcopy(indexes)
         print('Number of unique transistors in test: ', len(test_index))
 
-        # label = np.load(root_dir + "causal_label_hr.npy", mmap_mode='r')
         label = pickle.load(open(os.path.join(root_dir, "adjacency_matrix.pkl"), "rb"))
         if split:
             train_df = remove_constant_seqs(meta_data, label, train_index)  # exclude the constant and approximately constant seq
@@ -119,8 +118,8 @@ def generate_csv(game, seed=42, interval=10, split=True, save_dir='.cache/sim_da
             os.makedirs(os.path.join(root_dir, f"csv/fold_seed_{seed}"))
 
         if split:
-            # train_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "train_sim_grouped.csv"), index=False)
-            # valid_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "valid_sim_grouped.csv"), index=False)
+            train_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "train_sim_grouped.csv"), index=False)
+            valid_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "valid_sim_grouped.csv"), index=False)
             test_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "test_sim_grouped.csv"), index=False)
         else:
             test_df.to_csv(os.path.join(root_dir, f"csv/fold_seed_{seed}/", "all_sim_grouped.csv"), index=False)
