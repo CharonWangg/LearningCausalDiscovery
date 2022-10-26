@@ -24,7 +24,10 @@ def get_noiser(scale=0.1, seed=42, normalize=False):
 def corr_test(windows):
     # Test for correlation between two sequences
     # TODO: calculate only the half symmetric part to save time
-    corr = pearsonr(windows[:, 0], windows[:, 1])[0]
+    corr, p_value = pearsonr(windows[:, 0], windows[:, 1])
+    # only consider the correlation if the p_value is smaller than 0.05 (not big difference)
+    # if p_value >= 0.05:
+    #     corr = 0
     return corr
 
 
