@@ -43,11 +43,10 @@ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_ca
     ```
 ### For NMOS 6502 Inference
 * Create a Python 3.9 env
-* Deep learning tool: `git clone https://github.com/CharonWangg/shallowmind learning_causal_discovery/run`
 * Install requirements:
     ```
     conda activate env_py3.9
-    cd learning_causal_discovery/run/shallowmind && pip install -e .
+    cd learning_causal_discovery/run/tools && pip install -r requirements.txt
     ```
   
 ### For Experiments on NetSim
@@ -76,7 +75,7 @@ tar -xzvf sims.tar.gz
 │   ├── notebooks  # inference and figures
 │   ├── trian.py  # entry point for training
 │   ├── train_all.sh  # shell script for training
-│   ├── shallowmind  # deep learning tool
+│   ├── tools  # deep learning tool
 ```
 ## Usage
 ### MOS 6502 Simulation

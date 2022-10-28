@@ -14,7 +14,7 @@ from entropy_estimators import mi
 import sys
 from copy import deepcopy
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from shallowmind.api.infer import prepare_inference
+from tools.api.infer import prepare_inference
 
 import warnings
 warnings.filterwarnings("ignore")
