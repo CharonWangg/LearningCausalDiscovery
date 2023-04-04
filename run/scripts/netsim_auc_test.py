@@ -1,6 +1,16 @@
-from causallearn.search.ScoreBased.GES import ges
+import pandas as pd
 from causallearn.search.Granger.Granger import Granger
 from causallearn.search.FCMBased import lingam
+from tigramite.independence_tests.parcorr import ParCorr
+from causalnex.structure.dynotears import from_pandas_dynamic
+from tigramite import data_processing as pp
+from tigramite.pcmci import PCMCI
+import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from external.Neural_GC.models import cmlp as _cmlp
+from external.Neural_GC.models import clstm as _clstm
 from collections import defaultdict
 import tsaug
 import pickle
@@ -11,179 +21,295 @@ import torch
 import numpy as np
 import scipy.io as scio
 from entropy_estimators import mi
-import sys
-from copy import deepcopy
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from tools.api.infer import prepare_inference
+
+
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
 def parse_examples(sim, percentage, add_noise=False):
     if add_noise:
-        noiser = tsaug.AddNoise(scale=0.5, normalize=True, seed=42).augment
+        def noiser(x):
+            for i in range(x.shape[1]):
+                x[:, i] += np.random.normal(0, 0.5, x.shape[0])
+            return x
     data = scio.loadmat(sim)
-    n_subjects, n_node, duration = int(data['Nsubjects']), int(data['Nnodes']), int(data['Ntimepoints'])
+    n_subjects, n_node, duration = (
+        int(data["Nsubjects"]),
+        int(data["Nnodes"]),
+        int(data["Ntimepoints"]),
+    )
     slice = [int(percentage[0] * n_subjects), int(percentage[1] * n_subjects)]
-    data['ts'] = data['ts'][duration * slice[0]:duration * slice[1]]
-    data['net'] = data['net'][slice[0]:slice[1]]
+    data["ts"] = data["ts"][duration * slice[0] : duration * slice[1]]
+    data["net"] = data["net"][slice[0] : slice[1]]
     examples = []
-    for i, start in enumerate(range(0, data['ts'].shape[0], duration)):
+    for i, start in enumerate(range(0, data["ts"].shape[0], duration)):
         if add_noise:
-            examples.append({
-                'sample_id': i,
-                'seqs': noiser(data['ts'][start:start + duration]),
-                'label': data['net'][i]
-            })
+            examples.append(
+                {
+                    "sample_id": i,
+                    "seqs": noiser(data["ts"][start : start + duration]),
+                    "label": data["net"][i],
+                }
+            )
         else:
-            examples.append({
-                'sample_id': i,
-                'seqs': data['ts'][start:start + duration],
-                'label': data['net'][i]
-            })
+            examples.append(
+                {
+                    "sample_id": i,
+                    "seqs": data["ts"][start : start + duration],
+                    "label": data["net"][i],
+                }
+            )
     return examples
 
 
-def eval_by_ges(examples):
-    res = []
-    for example in tqdm(examples, desc='GES'):
-        Record = ges(example['seqs'], score_func='local_score_BIC')
-        g = Record['G'].graph
-        adj_g = np.array(
-            [[1 if g[j, i] == 1 and g[i, j] == -1 else 0 for j in range(g.shape[1])] for i in range(g.shape[0])])
-        # do not need to predict the diag elements
-        mask = np.eye(example['label'].shape[-1], dtype=bool)
-        res.append({'pred': adj_g[~mask],
-                    'label': example['label'][~mask]})
-    return res
-
-
-def eval_by_gc(examples, maxlag=5):
+def eval_by_gc(examples, maxlag=2):
     G = Granger(maxlag=maxlag)
     res = []
-    for example in tqdm(examples, desc='GC'):
-        N = example['label'].shape[-1]
+    for example in tqdm(examples, desc="GC"):
+        N = example["label"].shape[-1]
         # select the last maxlag matrix
-        coeff = G.granger_lasso(example['seqs'])
-        # do not need to predict the diag elements
-        mask = np.eye(N, dtype=bool)
+        coeff = G.granger_lasso(example["seqs"])
         # calculate the largest absolute weight value of each edge across lags
-        coeff = np.array([[np.max(np.abs(coeff[i, j::N])) for j in range(N)] for i in range(N)]).T
-        res.append({'pred': np.where(coeff!=0, 1, 0)[~mask],
-                    'label': example['label'][~mask]})
+        coeff = np.array(
+            [[np.max(np.abs(coeff[i, j::N])) for j in range(N)] for i in range(N)]
+        ).T
+        # ignore the diag predictions
+        for i in range(N):
+            coeff[i, i] = 0
+            example["label"][i, i] = 0
+
+        res.append(
+            {
+                "pred": coeff,
+                "label": example["label"],
+            }
+        )
 
     return res
 
 
-def eval_by_lingam(examples, random_state=42):
+def eval_by_lingam(examples, max_lag=2, random_state=42):
     res = []
-    for example in tqdm(examples, desc='LiNGAM'):
-        model = lingam.ICALiNGAM(random_state=random_state)
-        model.fit(example['seqs'])
+    for example in tqdm(examples, desc="LiNGAM"):
+        N = example["label"].shape[-1]
+        model = lingam.VARLiNGAM(lags=max_lag, random_state=random_state)
+        model.fit(example["seqs"])
+        adj = model.adjacency_matrices_  # shape: (max_lag, n_features, n_features)
         # do not need to predict the diag elements
-        mask = np.eye(example['label'].shape[-1], dtype=bool)
+        mask = np.eye(example["label"].shape[-1], dtype=bool)
+        # take the max absolute weight value across lags
+        lingam_score = np.max(np.abs(adj), axis=0).T
 
-        res.append({'pred': np.where(model.adjacency_matrix_!=0, 1, 0).T[~mask],
-                    'label': example['label'][~mask]})
+        # ignore the diag predictions
+        for i in range(N):
+            lingam_score[i, i] = 0
+            example["label"][i, i] = 0
+
+        res.append(
+            {
+                "pred": lingam_score,
+                "label": example["label"],
+            }
+        )
     return res
 
 
 def eval_by_mi(examples):
     res = []
-    for example in tqdm(examples, desc='MI'):
-        temp_mat = []
-        temp_label = []
-        for i in range(example['label'].shape[-1]):
-            for j in range(example['label'].shape[-1]):
+    for example in tqdm(examples, desc="MI"):
+        N = example["label"].shape[-1]
+        score = np.zeros((N, N))
+        for i in range(example["label"].shape[-1]):
+            for j in range(example["label"].shape[-1]):
                 # do not need to predict the diag elements
-                if i == j: continue
-                temp_mat.append(mi(example['seqs'][:, i], example['seqs'][:, j]))
-                temp_label.append(example['label'][i, j])
-        res.append({'pred': temp_mat, 'label': temp_label})
+                if i == j:
+                    continue
+                score[i, j] = mi(example["seqs"][:, i], example["seqs"][:, j])
+        for i in range(N):
+            score[i, i] = 0
+            example["label"][i, i] = 0
+
+        res.append({"pred": score, "label": example["label"]})
 
     return res
 
 
-def eval_by_sldisco(examples):
+def eval_by_pcmciplus(examples, max_lag=2):
     res = []
-    # SLdisco inference
-    # path of the SLdisco model's checkpoint and the config file
-    if examples[0]['label'].shape[-1] == 5:
-        cfg = 'work_dir/sldisco_node_5_n_samples_10000/sldisco_node_5_n_samples_10000.py'
-        ckpt = 'work_dir/sldisco_node_5_n_samples_10000/ckpts/exp_name=sldisco_node_5_n_samples_10000-cfg=sldisco_node_5_n_samples_10000-bs=1024-seed=42-val_loss_epoch=0.2563.ckpt'
-    elif examples[0]['label'].shape[-1] == 10:
-        cfg = 'work_dir/sldisco_node_10_n_samples_10000/sldisco_node_10_n_samples_10000.py'
-        ckpt = 'work_dir/sldisco_node_10_n_samples_10000/ckpts/exp_name=sldisco_node_10_n_samples_10000-cfg=sldisco_node_10_n_samples_10000-bs=1024-seed=42-val_loss_epoch=0.4550.ckpt'
-    elif examples[0]['label'].shape[-1] == 15:
-        cfg = 'work_dir/sldisco_node_15_n_samples_10000/sldisco_node_15_n_samples_10000.py'
-        ckpt = 'work_dir/sldisco_node_15_n_samples_10000/ckpts/exp_name=sldisco_node_15_n_samples_10000-cfg=sldisco_node_15_n_samples_10000-bs=1024-seed=42-val_loss_epoch=0.4709.ckpt'
-    elif examples[0]['label'].shape[-1] == 50:
-        cfg = 'work_dir/sldisco_node_50_n_samples_10000/sldisco_node_50_n_samples_10000.py'
-        ckpt = 'work_dir/sldisco_node_50_n_samples_10000/ckpts/exp_name=sldisco_node_50_n_samples_10000-cfg=sldisco_node_50_n_samples_10000-bs=1024-seed=42-val_loss_epoch=0.4883.ckpt'
+    for example in tqdm(examples, desc="PCMCI+"):
+        X = example["seqs"]
+        T, N = X.shape
+        var_names = [f'X_{j}' for j in range(N)]
+        df = pp.DataFrame(X, var_names=var_names)
+        pcmci = PCMCI(dataframe=df,
+                      cond_ind_test=ParCorr(significance='analytic'),
+                      verbosity=0)
+        results = pcmci.run_pcmciplus(tau_min=0, tau_max=max_lag)
+        # Initialize the summary graph as an N x N matrix with zeros
+        summary_graph = np.zeros((N, N), dtype=int)
+        # Iterate through the matrix G and fill in the summary graph
+        for i in range(N):
+            for j in range(N):
+                for tau in range(max_lag + 1):
+                    if results['graph'][i, j, tau] == '-->':
+                        summary_graph[i, j] = 1
+                        break
 
-    di, mi = prepare_inference(cfg, ckpt)
-    mi = mi.cuda()
-    mi.eval()
-    with torch.no_grad():
-        for example in tqdm(examples, desc='SLDisco'):
-            ts = example['seqs']
-            windows = np.corrcoef(ts, rowvar=False).reshape(1, 1, example['label'].shape[-1], example['label'].shape[-1])
-            x = torch.tensor(windows).float().cuda()
-            pred = mi(x).sigmoid()
-            # do not need to predict the diag elements
-            mask = torch.eye(example['label'].shape[-1], dtype=torch.bool)
-            pred = pred.reshape(example['label'].shape[-1], example['label'].shape[-1])
-            res.append({'pred': pred.cpu()[~mask], 'label': example['label'][~mask]})
+        # ignore the diag predictions
+        for i in range(N):
+            summary_graph[i, i] = 0
+            example["label"][i, i] = 0
+        res.append(
+            {
+                "pred": summary_graph,
+                "label": example["label"],
+            }
+        )
+
     return res
 
 
-if __name__ == '__main__':
+def eval_by_dynotears(examples, max_lag=2):
+    """
+    modified from https://github.com/ckassaad/causal_discovery_for_time_series/blob/master/baselines/scripts_python/dynotears.py
+    """
+    res = []
+    for example in tqdm(examples, desc="Dynotears"):
+        X = example["seqs"]
+        T, N = X.shape
+        var_names = [f'X_{j}' for j in range(N)]
+
+        df = pd.DataFrame(X, columns=var_names)
+        sm = from_pandas_dynamic(df, lambda_w=0.5, lambda_a=0.5, max_iter=2000, p=max_lag)
+
+        tname_to_name_dict = dict()
+        count_lag = 0
+        idx_name = 0
+        for tname in sm.nodes:
+            tname_to_name_dict[tname] = int(df.columns[idx_name].split('_')[-1])
+            if count_lag == max_lag:
+                idx_name = idx_name + 1
+                count_lag = -1
+            count_lag = count_lag + 1
+
+        # Initialize the summary graph as an N x N matrix with zeros
+        summary_graph = np.zeros((N, N), dtype=int)
+        for ce in sm.edges:
+            c = ce[0]
+            c = tname_to_name_dict[c]
+            e = ce[1]
+            e = tname_to_name_dict[e]
+            summary_graph[c, e] = 1
+
+        # ignore the diag predictions
+        for i in range(N):
+            summary_graph[i, i] = 0
+            example["label"][i, i] = 0
+        res.append(
+            {
+                "pred": summary_graph,
+                "label": example["label"],
+            }
+        )
+
+    return res
+
+
+def eval_by_cMLP(examples, max_lag=2):
+    """
+    modified from https://github.com/iancovert/Neural-GC/blob/master/cmlp_lagged_var_demo.ipynb
+    """
+    hidden_size = 10
+    device = 'cuda'
+    res = []
+    for example in tqdm(examples, desc="cMLP"):
+        X = example['seqs']
+        X = torch.tensor(X[np.newaxis], dtype=torch.float32, device=device)
+        cmlp = _cmlp.cMLP(X.shape[-1], lag=max_lag, hidden=[hidden_size]).to(device)
+        train_loss_list = _cmlp.train_model_ista(cmlp, X, lam=0.1, lam_ridge=0.464159, lr=0.0005, max_iter=2000,
+                                           check_every=2000)
+
+        # ignore the diag elements
+        mask = np.eye(example["label"].shape[-1], dtype=bool)
+        summary_graph = cmlp.GC().cpu().data.numpy().T
+        res.append(
+            {
+                "pred": summary_graph[~mask],
+                "label": example["label"][~mask],
+            }
+        )
+    return res
+
+
+def eval_by_cLSTM(examples):
+    """
+    modified from https://github.com/iancovert/Neural-GC/blob/master/clstm_lorenz_demo.ipynb
+    """
+    hidden_size = 10
+    device = 'cuda'
+    res = []
+    for example in tqdm(examples, desc="cLSTM"):
+        X = example["seqs"]
+        X = torch.tensor(X[np.newaxis], dtype=torch.float32, device=device)
+        clstm = _clstm.cLSTM(X.shape[-1], hidden=hidden_size).to(device)
+        # Train with ISTA
+        train_loss_list = _clstm.train_model_ista(clstm, X, context=10, lam=0.1, lam_ridge=0.010772, lr=1e-3, max_iter=4000,
+                                            check_every=4000)
+        summary_graph = clstm.GC().cpu().data.numpy().T
+
+        # ignore the diag elements
+        mask = np.eye(example["label"].shape[-1], dtype=bool)
+        res.append(
+            {
+                "pred": summary_graph[~mask],
+                "label": example["label"][~mask],
+            }
+        )
+
+    return res
+
+
+def save(dataset_id, method, res, root_dir=".cache/sim_data/netsim_auc_result"):
+    if not os.path.exists(root_dir):
+        os.makedirs(root_dir)
+    if not os.path.exists(os.path.join(root_dir, f"dataset=netsim_{dataset_id}-method={method}.pkl")):
+        with open(os.path.join(root_dir, f"dataset=netsim_{dataset_id}-method={method}.pkl"), "wb") as f:
+            pickle.dump(res, f)
+    else:
+        print(f"file {os.path.join(root_dir, f'dataset=netsim_{dataset_id}-method={method}.pkl')} already exists")
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root_dir', type=str, default='.cache/sim_data/')
+    parser.add_argument("--root_dir", type=str, default=".cache/sim_data/")
+    parser.add_argument("--dataset_id", type=int, default=1)
     # noise-free or add noise
-    parser.add_argument('--condition', type=str, choices=['default', 'noise'], default='default')
+    parser.add_argument(
+        "--condition", type=str, choices=["default", "noise"], default="default"
+    )
     args = parser.parse_args()
     root_dir = args.root_dir
+    dataset_id = args.dataset_id
 
-    pred_sldisco, pred_ges, pred_gc, pred_mi, pred_lingam = \
-        defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
-    percentage = [0.6, 1.0]
-    netsim_dir = os.path.join(os.path.dirname(os.path.dirname(root_dir)), 'netsim')
+    percentage = [0.8, 1.0]
+
     # all simulations have fixed sample length 200
-    sims = [f'{netsim_dir}/sim{i}.mat' for i in [1, 2, 3, 4, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 24]]
-
-    for sim in tqdm(sims, desc='Sim'):
-        examples = parse_examples(sim, percentage, add_noise=(args.condition=='noise'))
-
-        if 'sim4' in sim:
-            # sldisco
-            pred_sldisco[sim] = eval_by_sldisco(examples)
-            # # ges
-            pred_ges[sim] = []
-            # # granger causality
-            pred_gc[sim] = []
-            # # mutual info
-            pred_mi[sim] = eval_by_mi(examples)
-            # lingam
-            pred_lingam[sim] = eval_by_lingam(examples)
-            continue
-        # sldisco
-        pred_sldisco[sim] = eval_by_sldisco(examples)
-        # # ges
-        pred_ges[sim] = eval_by_ges(examples)
-        # # granger causality
-        pred_gc[sim] = eval_by_gc(examples)
-        # # mutual info
-        pred_mi[sim] = eval_by_mi(examples)
-        # lingam
-        pred_lingam[sim] = eval_by_lingam(examples)
-
-    # save
-    if not os.path.exists(os.path.join(root_dir, 'netsim_auc_result')):
-        os.makedirs(os.path.join(root_dir, 'netsim_auc_result'))
-    if not os.path.exists(os.path.join(root_dir, 'netsim_auc_result', f'{args.condition}_result.pkl')):
-        pickle.dump({'sldisco': pred_sldisco, 'ges': pred_ges, 'gc': pred_gc, 'mi': pred_mi, 'lingam': pred_lingam},
-                    open(os.path.join(root_dir, 'netsim_auc_result', f'{args.condition}_result.pkl'), 'wb'))
-    else:
-        print('File already exist')
+    sim = f"{os.path.join(os.path.dirname(os.path.dirname(root_dir)), 'netsim')}/sim{dataset_id}.mat"
+    save_dir = os.path.join(root_dir, "netsim_auc_result")
+    examples = parse_examples(
+        sim, percentage, add_noise=(args.condition == "noise")
+    )
+    # granger causality
+    save(dataset_id, "granger_causality", eval_by_gc(examples), root_dir=save_dir)
+    # mutual info
+    save(dataset_id, "mutual_info", eval_by_mi(examples), root_dir=save_dir)
+    # var-lingam
+    save(dataset_id, "var_lingam", eval_by_lingam(examples), root_dir=save_dir)
+    # pcmci+
+    save(dataset_id, "pcmciplus", eval_by_pcmciplus(examples), root_dir=save_dir)
+    # dynotears
+    save(dataset_id, "dynotears", eval_by_dynotears(examples), root_dir=save_dir)

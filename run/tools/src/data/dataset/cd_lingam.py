@@ -1,9 +1,7 @@
 import os
 import torch
 import numpy as np
-import scipy.io as scio
-from ..builder import DATASETS, build_sampler
-from ..pipeline import Compose
+from ..builder import DATASETS
 import causaldag as cd
 from copy import deepcopy
 from tqdm import tqdm
@@ -11,42 +9,64 @@ from tqdm import tqdm
 
 @DATASETS.register_module()
 class CDLiNGAM(torch.utils.data.Dataset):
-    def __init__(self, data_root='.cache', online=True, n_samples=5000, time_steps=10,
-                      adj_cfg=dict(markov_class=False, n_nodes=10, density=0.2, low=0.5, high=2.0, allow_negative=True),
-                      noise_cfg=dict(gaussian=True, scale=1.0, permutate=True),
-                 to_corr=False, to_binary=True, sampler=None, pipeline=None):
+    def __init__(
+        self,
+        data_root=".cache",
+        online=True,
+        n_samples=5000,
+        time_steps=10,
+        adj_cfg=dict(
+            markov_class=False,
+            n_nodes=10,
+            density=0.2,
+            low=0.5,
+            high=2.0,
+            allow_negative=True,
+        ),
+        noise_cfg=dict(gaussian=True, scale=1.0, permutate=True),
+        to_corr=False,
+        to_binary=True,
+        pipeline=None,
+    ):
         # Set all input args as attributes
         self.__dict__.update(locals())
-        self.subject = 'LiNGAM'
+        self.subject = "LiNGAM"
         self.pipeline = Compose(pipeline)
-        print('data_root')
+        print("data_root")
         if not os.path.exists(data_root):
             os.makedirs(data_root)
-            print(f'Creating data root: {data_root}')
+            print(f"Creating data root: {data_root}")
         if online:
             self.generate_tons_of_data()
         else:
-            self.xss = np.load(os.path.join(data_root, 'xss.npy'), mmap_mode='r')
-            self.adjs = np.load(os.path.join(data_root, 'adjs.npy'), mmap_mode='r')
-        if sampler is not None:
-            self.data_sampler = getattr(torch.utils.data, sampler)(self)
-        else:
-            self.data_sampler = torch.utils.data.RandomSampler(self)
+            self.xss = np.load(os.path.join(data_root, "xss.npy"), mmap_mode="r")
+            self.adjs = np.load(os.path.join(data_root, "adjs.npy"), mmap_mode="r")
 
     def generate_adjacency_matrix(self):
-        n_nodes, density, low, high = self.adj_cfg['n_nodes'], self.adj_cfg['density'], self.adj_cfg['low'], self.adj_cfg['high']
+        n_nodes, density, low, high = (
+            self.adj_cfg["n_nodes"],
+            self.adj_cfg["density"],
+            self.adj_cfg["low"],
+            self.adj_cfg["high"],
+        )
         if isinstance(density, (list, tuple)):
             density = np.random.uniform(density[0], density[1])
         prob_graph = np.float32(np.random.rand(n_nodes, n_nodes) < density)
         prob_graph = np.tril(prob_graph, -1)
-        weight = np.round(np.random.uniform(low=low, high=high, size=[n_nodes, n_nodes]), 1)
-        if not self.adj_cfg['allow_negative']:
+        weight = np.round(
+            np.random.uniform(low=low, high=high, size=[n_nodes, n_nodes]), 1
+        )
+        if not self.adj_cfg["allow_negative"]:
             weight[np.random.randn(n_nodes, n_nodes) < 0] *= -1
         adj = (prob_graph != 0).astype(float) * weight
         return adj
 
     def generate_data(self, adj):
-        gaussian, scale, permutate = self.noise_cfg['gaussian'], self.noise_cfg['scale'], self.noise_cfg['permutate']
+        gaussian, scale, permutate = (
+            self.noise_cfg["gaussian"],
+            self.noise_cfg["scale"],
+            self.noise_cfg["permutate"],
+        )
         mean = np.zeros(adj.shape[0])
         if isinstance(scale, (list, tuple)):
             scale = np.random.uniform(scale[0], scale[1])
@@ -77,7 +97,7 @@ class CDLiNGAM(torch.utils.data.Dataset):
             # NOTE: columns of xs and ss correspond to rows of b
             xs[:, i] = ss[:, i] + xs.dot(adj[i, :]) + mean[i]
 
-        if self.adj_cfg.get('markov_class', False):
+        if self.adj_cfg.get("markov_class", False):
             adj, node_list = self.dag2markovclass(adj).to_amat()
         if self.to_corr:
             xs = self.seq2corr(xs)
@@ -101,7 +121,7 @@ class CDLiNGAM(torch.utils.data.Dataset):
         # Generate tons of data
         self.xss = []
         self.adjs = []
-        for i in tqdm(range(self.n_samples), desc='Generating data...'):
+        for i in tqdm(range(self.n_samples), desc="Generating data..."):
             adj = self.generate_adjacency_matrix()
             xs, adj_, mean_ = self.generate_data(adj)
             self.xss.append(xs)
@@ -109,8 +129,8 @@ class CDLiNGAM(torch.utils.data.Dataset):
 
         if self.online:
             # save data to data_root for next time offline use
-            np.save(os.path.join(self.data_root, 'xss.npy'), np.stack(self.xss))
-            np.save(os.path.join(self.data_root, 'adjs.npy'), np.stack(self.adjs))
+            np.save(os.path.join(self.data_root, "xss.npy"), np.stack(self.xss))
+            np.save(os.path.join(self.data_root, "adjs.npy"), np.stack(self.adjs))
 
     def dag2markovclass(self, dag):
         # convert DAG to Markov Class
@@ -125,10 +145,13 @@ class CDLiNGAM(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         if self.to_corr:
-            seq = np.expand_dims(self.xss[idx], axis=0) if self.xss[idx].ndim == 2 else self.xss[idx]
-        seq, label = {'seq': seq}, self.adjs[idx].reshape(-1)
-        seq = self.pipeline(seq)
-        label = torch.tensor(label, dtype=torch.int64)
+            seq = (
+                np.expand_dims(self.xss[idx], axis=0)
+                if self.xss[idx].ndim == 2
+                else self.xss[idx]
+            )
+        seq = torch.tensor(seq, dtype=torch.float32)
+        label = torch.tensor(self.adjs[idx].reshape(-1), dtype=torch.int64)
         return seq, label
 
     def __len__(self):

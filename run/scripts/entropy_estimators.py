@@ -1,4 +1,3 @@
-
 # coding: utf-8
 
 # In[2]:
@@ -25,10 +24,11 @@ from torch.autograd import Variable
 
 # CONTINUOUS ESTIMATORS
 
+
 def entropy(x, k=3, base=2):
-    """ The classic K-L k-nearest neighbor continuous entropy estimator
-        x should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
-        if x is a one-dimensional scalar and we have four samples
+    """The classic K-L k-nearest neighbor continuous entropy estimator
+    x should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
+    if x is a one-dimensional scalar and we have four samples
     """
     assert k <= len(x) - 1, "Set k smaller than num. samples - 1"
     x = to_np_array(x)
@@ -37,38 +37,44 @@ def entropy(x, k=3, base=2):
     intens = 1e-10  # small noise to break degeneracy, see doc.
     x = [list(p + intens * nr.rand(len(x[0]))) for p in x]
     tree = ss.cKDTree(x)
-    nn = [tree.query(point, k + 1, p=float('inf'))[0][k] for point in x]
+    nn = [tree.query(point, k + 1, p=float("inf"))[0][k] for point in x]
     const = digamma(N) - digamma(k) + d * log(2)
     return (const + d * np.mean(np.log(nn))) / log(base)
 
+
 def centropy(x, y, k=3, base=2):
-    """ The classic K-L k-nearest neighbor continuous entropy estimator for the
-        entropy of X conditioned on Y.
+    """The classic K-L k-nearest neighbor continuous entropy estimator for the
+    entropy of X conditioned on Y.
     """
     x, y = to_np_array(x, y)
     hxy = entropy([xi + yi for (xi, yi) in zip(x, y)], k, base)
     hy = entropy(y, k, base)
     return hxy - hy
 
+
 def column(xs, i):
     return [[x[i]] for x in xs]
+
 
 def tc(xs, k=3, base=2):
     xis = [entropy(column(xs, i), k, base) for i in range(0, len(xs[0]))]
     return np.sum(xis) - entropy(xs, k, base)
 
+
 def ctc(xs, y, k=3, base=2):
     xis = [centropy(column(xs, i), y, k, base) for i in range(0, len(xs[0]))]
     return np.sum(xis) - centropy(xs, y, k, base)
+
 
 def corex(xs, ys, k=3, base=2):
     cxis = [mi(column(xs, i), ys, k, base) for i in range(0, len(xs[0]))]
     return np.sum(cxis) - mi(xs, ys, k, base)
 
+
 def mi(x, y, k=3, base=2):
-    """ Mutual information of x and y
-        x, y should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
-        if x is a one-dimensional scalar and we have four samples
+    """Mutual information of x and y
+    x, y should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
+    if x is a one-dimensional scalar and we have four samples
     """
     assert len(x) == len(y), "Lists should have same length"
     assert k <= len(x) - 1, "Set k smaller than num. samples - 1"
@@ -79,15 +85,15 @@ def mi(x, y, k=3, base=2):
     points = zip2(x, y)
     # Find nearest neighbors in joint space, p=inf means max-norm
     tree = ss.cKDTree(points)
-    dvec = [tree.query(point, k + 1, p=float('inf'))[0][k] for point in points]
+    dvec = [tree.query(point, k + 1, p=float("inf"))[0][k] for point in points]
     a, b, c, d = avgdigamma(x, dvec), avgdigamma(y, dvec), digamma(k), digamma(len(x))
     return (-a - b + c + d) / log(base)
 
 
 def cmi(x, y, z, k=3, base=2):
-    """ Mutual information of x and y, conditioned on z
-        x, y, z should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
-        if x is a one-dimensional scalar and we have four samples
+    """Mutual information of x and y, conditioned on z
+    x, y, z should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
+    if x is a one-dimensional scalar and we have four samples
     """
     assert len(x) == len(y), "Lists should have same length"
     assert k <= len(x) - 1, "Set k smaller than num. samples - 1"
@@ -99,15 +105,20 @@ def cmi(x, y, z, k=3, base=2):
     points = zip2(x, y, z)
     # Find nearest neighbors in joint space, p=inf means max-norm
     tree = ss.cKDTree(points)
-    dvec = [tree.query(point, k + 1, p=float('inf'))[0][k] for point in points]
-    a, b, c, d = avgdigamma(zip2(x, z), dvec), avgdigamma(zip2(y, z), dvec), avgdigamma(z, dvec), digamma(k)
+    dvec = [tree.query(point, k + 1, p=float("inf"))[0][k] for point in points]
+    a, b, c, d = (
+        avgdigamma(zip2(x, z), dvec),
+        avgdigamma(zip2(y, z), dvec),
+        avgdigamma(z, dvec),
+        digamma(k),
+    )
     return (-a - b + c + d) / log(base)
 
 
 def kldiv(x, xp, k=3, base=2):
-    """ KL Divergence between p and q for x~p(x), xp~q(x)
-        x, xp should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
-        if x is a one-dimensional scalar and we have four samples
+    """KL Divergence between p and q for x~p(x), xp~q(x)
+    x, xp should be a list of vectors, e.g. x = [[1.3], [3.7], [5.1], [2.4]]
+    if x is a one-dimensional scalar and we have four samples
     """
     assert k <= len(x) - 1, "Set k smaller than num. samples - 1"
     assert k <= len(xp) - 1, "Set k smaller than num. samples - 1"
@@ -119,53 +130,61 @@ def kldiv(x, xp, k=3, base=2):
     const = log(m) - log(n - 1)
     tree = ss.cKDTree(x)
     treep = ss.cKDTree(xp)
-    nn = [tree.query(point, k + 1, p=float('inf'))[0][k] for point in x]
-    nnp = [treep.query(point, k, p=float('inf'))[0][k - 1] for point in x]
+    nn = [tree.query(point, k + 1, p=float("inf"))[0][k] for point in x]
+    nnp = [treep.query(point, k, p=float("inf"))[0][k - 1] for point in x]
     return (const + d * np.mean(np.log(nnp)) - d * np.mean(np.log(nn))) / log(base)
 
 
 # DISCRETE ESTIMATORS
 def entropyd(sx, base=2):
-    """ Discrete entropy estimator
-        Given a list of samples which can be any hashable object
+    """Discrete entropy estimator
+    Given a list of samples which can be any hashable object
     """
     sx = to_np_array(sx)
     return entropyfromprobs(hist(sx), base=base)
 
 
 def midd(x, y, base=2):
-    """ Discrete mutual information estimator
-        Given a list of samples which can be any hashable object
+    """Discrete mutual information estimator
+    Given a list of samples which can be any hashable object
     """
     x, y = flatten(*to_np_array(x, y))
     return -entropyd(zip(x, y), base) + entropyd(x, base) + entropyd(y, base)
 
+
 def cmidd(x, y, z):
-    """ Discrete mutual information estimator
-        Given a list of samples which can be any hashable object
+    """Discrete mutual information estimator
+    Given a list of samples which can be any hashable object
     """
     x, y, z = flatten(*to_np_array(x, y, z))
-    return entropyd(zip(y, z)) + entropyd(zip(x, z)) - entropyd(zip(x, y, z)) - entropyd(z)
+    return (
+        entropyd(zip(y, z)) + entropyd(zip(x, z)) - entropyd(zip(x, y, z)) - entropyd(z)
+    )
+
 
 def centropyd(x, y, base=2):
-    """ The classic K-L k-nearest neighbor continuous entropy estimator for the
-        entropy of X conditioned on Y.
+    """The classic K-L k-nearest neighbor continuous entropy estimator for the
+    entropy of X conditioned on Y.
     """
     x, y = flatten(*to_np_array(x, y))
     return entropyd(zip(x, y), base) - entropyd(y, base)
+
 
 def tcd(xs, base=2):
     xis = [entropyd(column(xs, i), base) for i in range(0, len(xs[0]))]
     hx = entropyd(xs, base)
     return np.sum(xis) - hx
 
+
 def ctcd(xs, y, base=2):
     xis = [centropyd(column(xs, i), y, base) for i in range(0, len(xs[0]))]
     return np.sum(xis) - centropyd(xs, y, base)
 
+
 def corexd(xs, ys, base=2):
     cxis = [midd(column(xs, i), ys, base) for i in range(0, len(xs[0]))]
     return np.sum(cxis) - midd(xs, ys, base)
+
 
 def hist(sx):
     sx = discretize(sx)
@@ -185,7 +204,7 @@ def entropyfromprobs(probs, base=2):
 
 def elog(x):
     # for entropy, 0 log 0 = 0. but we get an error for putting log 0
-    if x <= 0. or x >= 1.:
+    if x <= 0.0 or x >= 1.0:
         return 0
     else:
         return x * log(x)
@@ -193,8 +212,7 @@ def elog(x):
 
 # MIXED ESTIMATORS
 def micd(x, y, k=3, base=2, warning=True):
-    """ If x is continuous and y is discrete, compute mutual information
-    """
+    """If x is continuous and y is discrete, compute mutual information"""
     x, y = flatten(*to_np_array(x, y))
     overallentropy = entropy(x, k, base)
 
@@ -204,7 +222,7 @@ def micd(x, y, k=3, base=2, warning=True):
         if type(y[i]) == list:
             y[i] = tuple(y[i])
     for sample in y:
-        word_dict[sample] = word_dict.get(sample, 0) + 1. / n
+        word_dict[sample] = word_dict.get(sample, 0) + 1.0 / n
     yvals = list(set(word_dict.keys()))
 
     mi = overallentropy
@@ -214,53 +232,64 @@ def micd(x, y, k=3, base=2, warning=True):
             mi -= word_dict[yval] * entropy(xgiveny, k, base)
         else:
             if warning:
-                print("Warning, after conditioning, on y=", yval, " insufficient data. Assuming maximal entropy in this case.")
+                print(
+                    "Warning, after conditioning, on y=",
+                    yval,
+                    " insufficient data. Assuming maximal entropy in this case.",
+                )
             mi -= word_dict[yval] * overallentropy
     return np.abs(mi)  # units already applied
+
 
 def midc(x, y, k=3, base=2, warning=True):
     x, y = flatten(*to_np_array(x, y))
     return micd(y, x, k, base, warning)
 
+
 def centropydc(x, y, k=3, base=2, warning=True):
     x, y = flatten(*to_np_array(x, y))
     return entropyd(x, base) - midc(x, y, k, base, warning)
+
 
 def centropycd(x, y, k=3, base=2, warning=True):
     x, y = flatten(*to_np_array(x, y))
     return entropy(x, k, base) - micd(x, y, k, base, warning)
 
+
 def ctcdc(xs, y, k=3, base=2, warning=True):
     xis = [centropydc(column(xs, i), y, k, base, warning) for i in range(0, len(xs[0]))]
     return np.sum(xis) - centropydc(xs, y, k, base, warning)
+
 
 def ctccd(xs, y, k=3, base=2, warning=True):
     xis = [centropycd(column(xs, i), y, k, base, warning) for i in range(0, len(xs[0]))]
     return np.sum(xis) - centropycd(xs, y, k, base, warning)
 
+
 def corexcd(xs, ys, k=3, base=2, warning=True):
     cxis = [micd(column(xs, i), ys, k, base, warning) for i in range(0, len(xs[0]))]
     return np.sum(cxis) - micd(xs, ys, k, base, warning)
 
+
 def corexdc(xs, ys, k=3, base=2, warning=True):
-    #cxis = [midc(column(xs, i), ys, k, base, warning) for i in range(0, len(xs[0]))]
-    #joint = midc(xs, ys, k, base, warning)
-    #return np.sum(cxis) - joint
+    # cxis = [midc(column(xs, i), ys, k, base, warning) for i in range(0, len(xs[0]))]
+    # joint = midc(xs, ys, k, base, warning)
+    # return np.sum(cxis) - joint
     return tcd(xs, base) - ctcdc(xs, ys, k, base, warning)
+
 
 # UTILITY FUNCTIONS
 def vectorize(scalarlist):
-    """ Turn a list of scalars into a list of one-d vectors
-    """
+    """Turn a list of scalars into a list of one-d vectors"""
     return [[x] for x in scalarlist]
 
 
 def shuffle_test(measure, x, y, z=False, ns=200, ci=0.95, **kwargs):
-    """ Shuffle test
-        Repeatedly shuffle the x-values and then estimate measure(x, y, [z]).
-        Returns the mean and conf. interval ('ci=0.95' default) over 'ns' runs.
-        'measure' could me mi, cmi, e.g. Keyword arguments can be passed.
-        Mutual information and CMI should have a mean near zero.
+    """Shuffle test
+    Repeatedly shuffle the x-values and then estimate measure(x, y, [z]).
+    Returns the mean and conf. interval ('ci=0.95' default) over 'ns' runs.
+    'measure' could me mi, cmi, e.g. Keyword arguments can be passed.
+    Mutual information and CMI should have a mean near zero.
     """
     xp = x[:]  # A copy that we can shuffle
     outputs = []
@@ -271,22 +300,26 @@ def shuffle_test(measure, x, y, z=False, ns=200, ci=0.95, **kwargs):
         else:
             outputs.append(measure(xp, y, **kwargs))
     outputs.sort()
-    return np.mean(outputs), (outputs[int((1. - ci) / 2 * ns)], outputs[int((1. + ci) / 2 * ns)])
+    return np.mean(outputs), (
+        outputs[int((1.0 - ci) / 2 * ns)],
+        outputs[int((1.0 + ci) / 2 * ns)],
+    )
 
 
 # INTERNAL FUNCTIONS
+
 
 def avgdigamma(points, dvec):
     # This part finds number of neighbors in some radius in the marginal space
     # returns expectation value of <psi(nx)>
     N = len(points)
     tree = ss.cKDTree(points)
-    avg = 0.
+    avg = 0.0
     for i in range(N):
         dist = dvec[i]
         # subtlety, we don't include the boundary point,
         # but we are implicitly adding 1 to kraskov def bc center point is included
-        num_points = len(tree.query_ball_point(points[i], dist - 1e-15, p=float('inf')))
+        num_points = len(tree.query_ball_point(points[i], dist - 1e-15, p=float("inf")))
         avg += digamma(num_points) / N
     return avg
 
@@ -295,6 +328,7 @@ def zip2(*args):
     # zip2(x, y) takes the lists of vectors and makes it a list of vectors in a joint space
     # E.g. zip2([[1], [2], [3]], [[4], [5], [6]]) = [[1, 4], [2, 5], [3, 6]]
     return [sum(sublist, []) for sublist in zip(*args)]
+
 
 def discretize(xs):
     def discretize_one(x):
@@ -308,9 +342,9 @@ def discretize(xs):
                 return tuple(x[0])
             else:
                 return x[0]
+
     # discretize(xs) takes a list of vectors and makes it a list of tuples or scalars
     return [discretize_one(x) for x in xs]
-
 
 
 # Functions for adaptations with PyTorch:
@@ -322,7 +356,14 @@ def to_np_array(*arrays):
             if array.is_cuda:
                 array = array.cpu()
             array = array.data
-        if isinstance(array, torch.FloatTensor) or isinstance(array, torch.LongTensor) or isinstance(array, torch.ByteTensor) or            isinstance(array, torch.cuda.FloatTensor) or isinstance(array, torch.cuda.LongTensor) or isinstance(array, torch.cuda.ByteTensor):
+        if (
+            isinstance(array, torch.FloatTensor)
+            or isinstance(array, torch.LongTensor)
+            or isinstance(array, torch.ByteTensor)
+            or isinstance(array, torch.cuda.FloatTensor)
+            or isinstance(array, torch.cuda.LongTensor)
+            or isinstance(array, torch.cuda.ByteTensor)
+        ):
             if array.is_cuda:
                 array = array.cpu()
             array = array.numpy()

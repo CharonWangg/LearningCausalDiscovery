@@ -39,6 +39,7 @@ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_ca
 * Setup:
     ```
     conda activate env_py2.7
+    cd learning_causal_discovery/nmos_simulation && pip install -r requirements.txt
     cd learning_causal_discovery/nmos_simulation && pip install -e .
     ```
 ### For NMOS 6502 Inference
