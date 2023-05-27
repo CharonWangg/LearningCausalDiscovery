@@ -10,7 +10,7 @@ from glob import glob
 # total simulation steps
 num_iterations = 512
 # interpolation for each clock
-step_limit = 400
+step_limit = 30
 # perturb times (only work for multiple perturb)
 perturb_times = 8
 

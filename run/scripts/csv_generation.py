@@ -12,8 +12,7 @@ from argparse import ArgumentParser
 
 interval = 10
 step_limit = 400
-num_iterations = 256
-num_windows = 8
+num_iterations = 128
 
 
 def remove_constant_seqs(data, label, index, train=False):

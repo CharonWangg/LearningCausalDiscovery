@@ -6,6 +6,8 @@ from tools.src.model.builder import (
     build_metric,
 )
 
+import math
+import torch.optim.lr_scheduler as lr_scheduler
 
 class ModelInterface(pl.LightningModule):
     def __init__(self, model, optimization):
@@ -114,13 +116,21 @@ class ModelInterface(pl.LightningModule):
                               weight_decay=self.optimization.optimizer.weight_decay)
 
         # scheduler
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                               T_max=self.num_max_steps,
-                                                               eta_min=self.optimization.scheduler.min_lr)
+        if self.optimization.scheduler.get('warmup_steps', None) is None:
+            warmup_steps = 5*len(self.trainer.datamodule.train_dataloader())
+        else:
+            warmup_steps = self.optimization.scheduler.warmup_steps * len(self.trainer.datamodule.train_dataloader())
+
+        warmup_scheduler = LinearWarmupScheduler(optimizer,
+                                                 warmup_steps=warmup_steps,
+                                                 initial_lr=self.optimization.optimizer.get('initial_lr', 0),
+                                                 max_lr=self.optimization.optimizer.lr,
+                                                 T_max=self.num_max_steps,
+                                                 eta_min=self.optimization.scheduler.min_lr)
         scheduler = {
             "interval": "step",
             "frequency": 1,
-            "scheduler": scheduler,
+            "scheduler": warmup_scheduler,
         }
 
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
@@ -160,3 +170,21 @@ class ModelInterface(pl.LightningModule):
 
         effective_accum = self.trainer.accumulate_grad_batches * num_devices
         return (batches // effective_accum) * self.trainer.max_epochs
+
+
+class LinearWarmupScheduler(lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, warmup_steps, initial_lr, max_lr, T_max, eta_min=0):
+        self.warmup_steps = warmup_steps
+        self.initial_lr = initial_lr
+        self.max_lr = max_lr
+        self.T_max = T_max
+        self.eta_min = eta_min
+        super(LinearWarmupScheduler, self).__init__(optimizer)
+
+    def get_lr(self):
+        if self.last_epoch <= self.warmup_steps:
+            return [self.initial_lr + (self.max_lr - self.initial_lr) * self.last_epoch / self.warmup_steps for _ in self.base_lrs]
+        else:
+            t = self.last_epoch - self.warmup_steps
+            return [self.eta_min + (self.max_lr - self.eta_min) * (1 + math.cos(math.pi * t / self.T_max)) / 2 for _ in self.base_lrs]
+

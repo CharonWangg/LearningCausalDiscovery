@@ -88,7 +88,8 @@ class LinearHead(nn.Module):
                                but got {type(losses)}"
             )
 
-        self.model = nn.Linear(self.in_channels, self.num_classes)
+        self.model = nn.Sequential(nn.LayerNorm(self.in_channels),
+                                   nn.Linear(self.in_channels, self.num_classes))
 
     def forward(self, x):
         return self.model(x)
@@ -124,5 +125,52 @@ class MeanPooler(LinearHead):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+
     def forward(self, x):
         return self.model(x.mean(dim=1))
+
+
+class AttentionPooler(LinearHead):
+    def __init__(self, dropout=0.3, **kwargs):
+        super().__init__(**kwargs)
+        self.dropout = nn.Dropout(dropout)
+        self.attention = nn.Sequential(
+                        nn.LayerNorm(self.in_channels),
+                        nn.Linear(self.in_channels, self.in_channels, bias=False),
+                        nn.GELU(),
+                        nn.Linear(self.in_channels, 1),
+        )
+
+    def forward(self, x):
+        x = self.dropout(x)
+        w = self.attention(x).float()
+        w = torch.softmax(w, 1)
+        attention_embeddings = torch.sum(w * x, dim=1)
+        return self.model(attention_embeddings)
+
+
+class DecoderHead(LinearHead):
+    def __init__(self, rec_error_threshold=0, **kwargs):
+        super().__init__(**kwargs)
+        self.rec_error_threshold = rec_error_threshold
+
+    def forward(self, x):
+        return self.model(x)
+
+    def forward_train(self, input, label):
+        """forward for training"""
+        output = self.forward(input)
+        losses = self.parse_losses(output, label)
+
+        return losses
+
+    def forward_test(self, input, label):
+        """forward for testing"""
+        output = self.forward(input)
+
+        # reconstruction error
+        losses = self.parse_losses(output.reshape(-1), label.reshape(-1))
+        output = ((label - output) ** 2).mean(axis=-1).mean(axis=-1)
+        output = (output - self.rec_error_threshold).float()
+        output = torch.where(output > 0, output, torch.zeros_like(output))
+        return {**{"output": output}, **losses}

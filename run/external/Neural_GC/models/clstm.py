@@ -447,9 +447,16 @@ def train_model_ista(clstm, X, context, lr, max_iter, lam=0, lam_ridge=0,
     train_loss_list = []
 
     # Set up data.
-    X, Y = zip(*[arrange_input(x, context) for x in X])
-    X = torch.cat(X, dim=0)
-    Y = torch.cat(Y, dim=0)
+    # context = 21
+    # X, Y = zip(*[arrange_input(x, context) for x in X])
+    # X = torch.cat(X, dim=0)
+    # Y = torch.cat(Y, dim=0)
+
+    Y = X[:, 1:, :]
+    X = X[:, :-1, :]
+
+
+    print(X.shape, Y.shape)
 
     # For early stopping.
     best_it = None

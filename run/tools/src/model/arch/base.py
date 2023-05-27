@@ -27,6 +27,7 @@ class Base(pl.LightningModule):
         self.patch_size = patch_size
         self.stride = stride
         self.input_norm = input_norm
+        self.losses = losses
 
         # build embedding layer
         self.embedding = PatchEmbeddingLayer(
@@ -40,7 +41,7 @@ class Base(pl.LightningModule):
         # build backbone
 
         # build decode head
-        self.head = MeanPooler(in_channels=self.hidden_size, num_classes=self.num_classes, losses=losses)
+        self.head = MeanPooler(in_channels=self.embedding_size, num_classes=self.num_classes, losses=losses)
 
     def exact_feat(self, x):
         x = self.embedding(x)

@@ -712,7 +712,7 @@ cdef class WireCalculator:
         # iterations.  If it doesn't converge by then, raise an 
         # exception.
         cdef int step = 0
-        cdef int stepLimit = 400
+        cdef int stepLimit = 50
         cdef int a, b
         cdef int i, s
 
@@ -767,7 +767,7 @@ cdef class WireCalculator:
             # the simulation doesn't converge any time other than that.
             if halfClkCount > 0:
                 traceback.print_stack()
-                # raise RuntimeError(msg)
+                raise RuntimeError(msg)
 
         # Check that we've properly reset the recalcArray.  All entries
         # should be zero in preparation for the next half clock cycle.

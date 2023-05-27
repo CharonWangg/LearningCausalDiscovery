@@ -6,10 +6,10 @@ from sim2600 import params
 from argparse import ArgumentParser
 from record_transistor_state import single_transistor_perturbation, record_regular_transistor_state
 
-step_limit = 400
+step_limit = 30
 
 
-def resample(marked_data):
+def resample(marked_data, n_steps=step_limit):
     # padding to sequence with fix length in a half-clock by the markers (-1) in recording
     marked_data = np.where(marked_data==255, -1, marked_data)
     # detect the end of , last marker point is the end of the sequence
@@ -27,11 +27,11 @@ def resample(marked_data):
         steps = clock.shape[1]
         snippet_lengths.append(steps)
         # if the step number in a half-clock is less than step_limit, padding it with the last state to step_limit
-        if steps < step_limit:
+        if steps < n_steps:
             if clock.shape[1] == 0:
-                clock = np.concatenate((clock, np.tile(clock.reshape(-1, 1), step_limit-steps)), axis=1)
+                clock = np.concatenate((clock, np.tile(clock.reshape(-1, 1), n_steps-steps)), axis=1)
             else:
-                clock = np.concatenate((clock, np.tile(clock[:, -1].reshape(-1, 1), step_limit-steps)), axis=1)
+                clock = np.concatenate((clock, np.tile(clock[:, -1].reshape(-1, 1), n_steps-steps)), axis=1)
         clocks.append(clock)
     marked_data = np.concatenate(clocks, axis=1) if len(clocks) > 1 else clocks[0]
     print('maximum snippet length: ', max(snippet_lengths))

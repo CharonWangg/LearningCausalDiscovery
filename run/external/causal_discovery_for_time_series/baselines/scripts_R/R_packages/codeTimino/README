@@ -16,7 +16,6 @@ Try the code:
 2.  source("startup.R")
 3.  source("exp_simple.R")
 
-
 Comments:
 - The main function is "timino_dag" from timino_causality.R
 - Using alpha = 0 always outputs a result (rather than stopping when the model does not seem to fit); in this case the result is always a fully connected DAG.

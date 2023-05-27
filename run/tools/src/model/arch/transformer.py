@@ -1,6 +1,7 @@
 import torch.nn as nn
 from ..builder import ARCHS
 from .base import Base
+from .commons import AttentionPooler
 
 
 @ARCHS.register_module()
@@ -19,5 +20,7 @@ class Transformer(Base):
             dim_feedforward=self.hidden_size,
             dropout=self.dropout,
             batch_first=True,
+            norm_first=True,
         )
         self.backbone = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.head = AttentionPooler(in_channels=self.embedding_size, num_classes=self.num_classes, losses=self.losses)

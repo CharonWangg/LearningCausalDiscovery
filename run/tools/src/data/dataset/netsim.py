@@ -4,6 +4,8 @@ import scipy.io as scio
 from ..builder import DATASETS
 from copy import deepcopy
 
+from .utils import TimeSeriesShiftAugmentation
+
 
 @DATASETS.register_module()
 class NetSim(torch.utils.data.Dataset):
@@ -14,11 +16,14 @@ class NetSim(torch.utils.data.Dataset):
         percentage=1.0,
         interval=10,
         max_length=200,
+        shift_range=None,
     ):
         # Set all input args as attributes
         self.__dict__.update(locals())
         self.subject = data_root.split("/")[-1].strip(".mat")
         self.check_files()
+        if shift_range is not None:
+            self.transform = TimeSeriesShiftAugmentation(shift_range)
 
     def check_files(self):
         if isinstance(self.percentage, float):
@@ -72,6 +77,9 @@ class NetSim(torch.utils.data.Dataset):
             axis=-1,
         )
         seq = torch.tensor(seq, dtype=torch.float32)
+
+        if hasattr(self, "transform"):
+            seq = self.transform(seq)
 
         label = torch.tensor(example["label"], dtype=torch.int64)
         return seq, label

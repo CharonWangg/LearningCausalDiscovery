@@ -105,6 +105,8 @@ def train():
 
     if cfg.get("resume_from", None) is None:
         model = ModelInterface(cfg.model, cfg.optimization)
+    else:
+        model = ModelInterface.load_from_checkpoint(checkpoint_path=cfg.resume_from)
 
     # log
     # callbacks
@@ -129,7 +131,7 @@ def train():
             )
 
     # used to control early stopping
-    if cfg.log.earlystopping is not None:
+    if cfg.log.get("earlystopping", None) is not None:
         callbacks.append(
             plc.EarlyStopping(
                 monitor=cfg.log.get("monitor", "val_loss"),

@@ -10,7 +10,7 @@ name_n_lags = args[3]
 n_lags <- scan(name_n_lags, what=double())
 path <- args[4]
 print(path)
-print("#######################")
+print("\n#######################")
 setwd(path)
 
 start_up <- function() {

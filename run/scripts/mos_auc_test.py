@@ -10,11 +10,16 @@ from tqdm import tqdm
 from scipy.stats import pearsonr
 from causallearn.search.FCMBased import lingam
 from sklearn.metrics import roc_auc_score, average_precision_score
+from tigramite.independence_tests.parcorr import ParCorr
+from causalnex.structure.dynotears import from_pandas_dynamic
+from tigramite import data_processing as pp
+from tigramite.pcmci import PCMCI
 from entropy_estimators import mi
 from multiprocessing import Pool, Manager
 from copy import deepcopy
 import argparse
 from sklearn.linear_model import LassoCV
+import time
 
 import warnings
 
@@ -73,7 +78,63 @@ def var_lingam_test(windows, max_lag=5):
     return lingam_score
 
 
-# def pcmci_test():
+def dynotears_test(windows, max_lag=5):
+    time_start = time.time()
+    T, N = windows.shape
+    var_names = [f'X_{j}' for j in range(N)]
+
+    df = pd.DataFrame(windows, columns=var_names)
+    sm = from_pandas_dynamic(df, lambda_w=0.5, lambda_a=0.5, max_iter=2000, p=max_lag)
+
+    tname_to_name_dict = dict()
+    count_lag = 0
+    idx_name = 0
+    for tname in sm.nodes:
+        tname_to_name_dict[tname] = int(df.columns[idx_name].split('_')[-1])
+        if count_lag == max_lag:
+            idx_name = idx_name + 1
+            count_lag = -1
+        count_lag = count_lag + 1
+
+    # Initialize the summary graph as an N x N matrix with zeros
+    summary_graph = np.zeros((N, N), dtype=int)
+    for ce in sm.edges:
+        c = ce[0]
+        c = tname_to_name_dict[c]
+        e = ce[1]
+        e = tname_to_name_dict[e]
+        summary_graph[c, e] = 1
+
+    time_end = time.time()
+    print('time cost', time_end - time_start, 's')
+
+    return summary_graph
+
+
+def pcmciplus_test(windows, max_lag=5):
+    time_start = time.time()
+    T, N = windows.shape
+    var_names = [f'X_{j}' for j in range(N)]
+    df = pp.DataFrame(windows, var_names=var_names)
+    pcmci = PCMCI(dataframe=df,
+                  cond_ind_test=ParCorr(significance='analytic'),
+                  verbosity=0)
+    results = pcmci.run_pcmciplus(tau_min=0, tau_max=max_lag)
+    # Initialize the summary graph as an N x N matrix with zeros
+    summary_graph = np.zeros((N, N), dtype=int)
+    # Iterate through the matrix G and fill in the summary graph
+    for i in range(N):
+        for j in range(N):
+            for tau in range(max_lag + 1):
+                if results['graph'][i, j, tau] == '-->':
+                    summary_graph[i, j] = 1
+                    break
+
+    time_end = time.time()
+    print('time cost', time_end - time_start, 's')
+
+    return summary_graph
+
 
 class AUCTest:
     def __init__(
@@ -94,6 +155,8 @@ class AUCTest:
             "mi": mi_test,
             "gc": pairwise_granger_linear_test,
             "lingam": var_lingam_test,
+            # "pcmciplus": pcmciplus_test,
+            # "dynotears": dynotears_test,
         }
         if methods != "all":
             self.methods = {k: v for k, v in self.methods.items() if k in methods}
@@ -120,8 +183,10 @@ class AUCTest:
 
     def run(self, method="corr", save_cfg=dict()):
         assert method in self.methods.keys(), f"{method} is not supported"
-        if self.n_jobs == 1:
-            results = self.single_process_test(
+        graph_based_methods = ["dynotears", "pcmciplus"]
+        pairwise_methods = ["corr", "mi", "gc", "lingam"]
+        if self.n_jobs == 1 or method in graph_based_methods:
+            results = self.single_process_test_for_graph(
                 {
                     "df": self.df,
                     "method": method,
@@ -149,6 +214,7 @@ class AUCTest:
                     ),
                 )
                 results.append(temp_result)
+
             p.close()  # close pool
             p.join()  # wait for all processes to finish
             print("All subprocesses done.")
@@ -169,6 +235,30 @@ class AUCTest:
 
         save_cfg["method"] = method
         self.save(results, save_cfg=save_cfg)
+
+    def single_process_test_for_graph(self, kwargs):
+        df = kwargs["df"]
+        method, method_imp = kwargs["method"], self.methods[kwargs["method"]]
+        mat = kwargs["mat"]
+
+        # use the entire mat to do graph-based causal discovery
+        transistor_idxs = df["transistor_1"].unique().tolist()
+        windows = np.stack([mat[idx] for idx in transistor_idxs], axis=0).T
+        adj_mat = np.zeros((windows.shape[0], windows.shape[0]))
+        for i, row in df.iterrows():
+            adj_mat[
+                transistor_idxs.index(row["transistor_1"]),
+                transistor_idxs.index(row["transistor_2"]),
+            ] = row["label"]
+
+        pred = method_imp(windows, max_lag=self.maxlag)
+
+        # ignore the diagonal
+        mask = np.ones(adj_mat.shape, dtype=bool)
+        # flatten the dict into a list
+        results = {"pred": pred[~mask].reshape(-1).tolist(),
+                   "label": adj_mat[~mask].reshape(-1).tolist()}
+        return results
 
     def single_process_test(self, kwargs):
         df = kwargs["df"]
@@ -205,8 +295,9 @@ class AUCTest:
         return results
 
     def format_results(self, save_cfg=dict()):
-        game, method, seed, note = (
+        game, window, method, seed, note = (
             save_cfg["game"],
+            save_cfg["window"],
             save_cfg["method"],
             save_cfg["seed"],
             save_cfg.get("note", "default"),
@@ -216,7 +307,7 @@ class AUCTest:
         return os.path.join(
             self.root_dir,
             "mos_auc_result",
-            f"game={game}-method={method}-seed={seed}-note={note}.pkl",
+            f"game={game}-window={window[0]}_{window[1]}-method={method}-seed={seed}-note={note}.pkl",
         )
 
     def save(self, result, save_cfg=dict()):
@@ -239,64 +330,66 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print(args)
-    interval = 100
+    interval = 1
     maxlag = 5
     n_jobs = args.n_jobs
     games = [args.game] if args.game != "All" else ["DonkeyKong", "Pitfall", "SpaceInvaders"]
-    seeds = [42, 1, 2, 3, 4]
+    seed = 42
     selected_methods = "all"
     debug = args.debug
     root_dir = args.root_dir
 
-    # no noise
-    # for game in games:
-    #     for seed in seeds:
-    #         random.seed(seed)
-    #         np.random.seed(seed)
-    #         mat = np.load(
-    #             os.path.join(root_dir,
-    #                          f"{game}/HR/window_768_1024/Regular_3510_step_256_rec_400_window_768_1024.npy"),
-    #             mmap_mode="r",
-    #         ).astype(np.float32)[:, ::interval]
-    #         # add very small noise to avoid repeated and constant states because of downsampling
-    #         mat += np.random.normal(0, 1e-3, mat.shape)
-    #         df = pd.read_csv(
-    #             os.path.join(
-    #                 root_dir, f"{game}/HR/window_768_1024/csv/fold_seed_{seed}/test.csv"
-    #             )
-    #         )
-    #         if debug:
-    #             df = df.iloc[:1000]
-    #         tester = AUCTest(
-    #             mat,
-    #             df,
-    #             methods=selected_methods,
-    #             maxlag=maxlag,
-    #             n_jobs=n_jobs,
-    #             root_dir=root_dir,
-    #         )
-    #         tester.run_all_methods(
-    #             save_cfg={"game": game, "seed": seed, "note": "default"}
-    #         )
+    test_windows = [(0, 128), (128, 256), (384, 512), (512, 640), (640, 768)]
 
-    # # under noise std 0.1, 0.3, 0.5
-    transforms = [0.1, 0.3, 0.5]
+    # no noise
+    for test_window in test_windows:
+        for game in games:
+            random.seed(seed)
+            np.random.seed(seed)
+            mat = np.load(
+                os.path.join(root_dir,
+                             f"{game}/HR/window_{test_window[0]}_{test_window[1]}/Regular_3510_step_128_rec_30_window_{test_window[0]}_{test_window[1]}.npy"),
+                mmap_mode="r",
+            ).astype(np.float32)[:, ::interval]
+            # add very small noise to avoid repeated and constant states because of downsampling
+            mat += np.random.normal(0, 1e-3, mat.shape)
+            df = pd.read_csv(
+                os.path.join(
+                    root_dir, f"DonkeyKong/HR/window_{test_window[0]}_{test_window[1]}/csv/fold_seed_{seed}/test_ds_1.0_unique_True.csv"
+                )
+            )
+            if debug:
+                df = df.iloc[:1000]
+            tester = AUCTest(
+                mat,
+                df,
+                methods=selected_methods,
+                maxlag=maxlag,
+                n_jobs=n_jobs,
+                root_dir=root_dir,
+            )
+            tester.run_all_methods(
+                save_cfg={"game": game, "window": test_window, "seed": seed, "note": "default"}
+            )
+
+    # # under noise std 0.03, 0.05, 0.1
+    transforms = [0.03, 0.05, 0.1]
     games = ["DonkeyKong"]
-    for game in games:
-        for seed in seeds:
+    for test_window in test_windows:
+        for game in games:
             random.seed(seed)
             np.random.seed(seed)
             for transform in transforms:
                 mat = np.load(
                     os.path.join(
-                        root_dir, f"{game}/HR/window_768_1024/Regular_3510_step_256_rec_400_window_768_1024_Noise_{transform}.npy"
+                        root_dir, f"{game}/HR/window_{test_window[0]}_{test_window[1]}/Regular_3510_step_128_rec_30_window_{test_window[0]}_{test_window[1]}_Noise_{transform}.npy"
                     ),
                     mmap_mode="r",
                 ).astype(np.float32)[:, ::interval]
                 df = pd.read_csv(
                     os.path.join(
-                        root_dir, f"{game}/HR/window_768_1024/csv/fold_seed_{seed}/test.csv"
-                    )
+                                        root_dir, f"{game}/HR/window_{test_window[0]}_{test_window[1]}/csv/fold_seed_{seed}/test_ds_1.0_unique_True.csv"
+                                    )
                 )
                 if debug:
                     df = df.iloc[:1000]
@@ -309,5 +402,5 @@ if __name__ == "__main__":
                     root_dir=root_dir,
                 )
                 tester.run_all_methods(
-                    save_cfg={"game": game, "seed": seed, "note": f"{transform}noise"}
+                    save_cfg={"game": game, "window": test_window, "seed": seed, "note": f"{transform}noise"}
                 )

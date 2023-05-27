@@ -50,3 +50,19 @@ class FocalLoss(pl.LightningModule):
             return loss.mean()
         else:
             return loss.sum()
+
+
+@LOSSES.register_module()
+class WeightedCrossEntropyLoss(nn.Module):
+    def __init__(self, weight, loss_name="WeightedCrossEntropyLoss", loss_weight=1.0):
+        super(WeightedCrossEntropyLoss, self).__init__()
+        self.loss_weight = loss_weight
+        self.loss_name = loss_name
+        self.weight = torch.tensor([1/(1+weight), weight/(1+weight)], dtype=torch.float32)
+
+    def forward(self, input, target):
+        log_softmax = nn.LogSoftmax(dim=1)
+        log_probs = log_softmax(input)
+        one_hot_target = torch.zeros_like(input).scatter_(1, target.unsqueeze(1), 1).to(input.device)
+        weighted_loss = -log_probs * one_hot_target * self.weight.unsqueeze(0).to(input.device)
+        return weighted_loss.sum() / target.size(0)

@@ -6,12 +6,12 @@ model = dict(
     arch=dict(
             type="Transformer",
             in_channels=2,
-            hidden_size=128,
-            input_length=400*256,
-            embedding_size=128,
-            patch_size=320,
-            num_layers=2,
-            nhead=8,
+            hidden_size=192*4,
+            input_length=30*128,
+            embedding_size=192,
+            patch_size=32,
+            num_layers=8,
+            nhead=3,
             num_classes=num_classes,
             losses=loss
     ),
@@ -20,7 +20,7 @@ model = dict(
             dict(
                 type='TorchMetrics',
                 metric_name='AveragePrecision',
-                prob=True, num_classes=2
+                prob=True, pos_label=1
             ),
             dict(
                 type="TorchMetrics",
@@ -37,26 +37,27 @@ dataset_type = "NMOS6502"
 interval = 1
 
 data = dict(
-    train_batch_size=512,  # for single card
-    val_batch_size=512,
-    test_batch_size=512,
+    train_batch_size=1024,  # for single card
+    val_batch_size=2048,
+    test_batch_size=2048,
     num_workers=8,
     train=dict(
         type=dataset_type,
-        data_root='.cache/sim_data/DonkeyKong/HR/window_256_512/Regular_3510_step_256_rec_400_window_256_512.npy',
-        split=".cache/sim_data/DonkeyKong/HR/window_256_512/csv/fold_seed_42/train_ds_0.01.csv",
+        data_root='.cache/sim_data/DonkeyKong/HR/window_0_128/Regular_3510_step_128_rec_30_window_0_128.npy',
+        split=".cache/sim_data/DonkeyKong/HR/window_0_128/csv/fold_seed_42/train_ds_3.0_unique_True.csv",
         interval=interval,
+        shift_range=(-900, 900),
     ),
     val=dict(
         type=dataset_type,
-        data_root='.cache/sim_data/DonkeyKong/HR/window_512_768/Regular_3510_step_256_rec_400_window_512_768.npy',
-        split=".cache/sim_data/DonkeyKong/HR/window_512_768/csv/fold_seed_42/val_ds_0.01.csv",
+        data_root='.cache/sim_data/DonkeyKong/HR/window_128_256/Regular_3510_step_128_rec_30_window_128_256.npy',
+        split=".cache/sim_data/DonkeyKong/HR/window_128_256/csv/fold_seed_42/val_ds_1.0_unique_True.csv",
         interval=interval,
     ),
     test=dict(
         type=dataset_type,
-        data_root='.cache/sim_data/DonkeyKong/HR/window_768_1024/Regular_3510_step_256_rec_400_window_768_1024.npy',
-        split=".cache/sim_data/DonkeyKong/HR/window_768_1024/csv/fold_seed_42/test_ds_0.01.csv",
+        data_root='.cache/sim_data/DonkeyKong/HR/window_384_512/Regular_3510_step_128_rec_30_window_384_512.npy',
+        split=".cache/sim_data/DonkeyKong/HR/window_384_512/csv/fold_seed_42/test_ds_1.0_unique_True.csv",
         interval=interval,
     ),
 )
@@ -64,7 +65,7 @@ data = dict(
 log = dict(
     project_name="nmos6502_official",
     work_dir="work_dir",
-    exp_name="mos6502_transformer_128",
+    exp_name="mos6502_big_transformer_192",
     logger_interval=50,
     monitor="val_average_precision",
     logger=True,  # use wandb logger
@@ -73,27 +74,27 @@ log = dict(
         top_k=1,
         mode="max",
         verbose=True,
-        save_last=False,
+        save_last=True,
     ),
-    earlystopping=dict(
-        mode="max",
-        strict=False,
-        patience=5,
-        min_delta=0.0001,
-        check_finite=True,
-        verbose=True,
-    ),
+    # earlystopping=dict(
+    #     mode="max",
+    #     strict=False,
+    #     patience=5,
+    #     min_delta=0.0001,
+    #     check_finite=True,
+    #     verbose=True,
+    # ),
 )
 
-resume_from = None
+resume_from = 'work_dir/mos6502_big_transformer_192/ckpts/exp_name=mos6502_big_transformer_192-cfg=mos6502_transformer_128-bs=1024-seed=42-val_average_precision=0.2380.ckpt'
 cudnn_benchmark = True
 
 # optimization
 optimization = dict(
     type="epoch",
-    max_iters=10,
+    max_iters=150,
     optimizer=dict(type="AdamW",
-                   lr=5e-5,
+                   lr=2e-3,
                    weight_decay=0.05),
     scheduler=dict(
         min_lr=0.0,
