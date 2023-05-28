@@ -1,13 +1,7 @@
 import os
 import numpy as np
-from tqdm import tqdm
-import pickle
 from argparse import ArgumentParser
 from simulation_v4 import resample
-from collections import defaultdict
-from sim2600 import params
-from record_transistor_state import single_transistor_perturbation
-from adjacency_matrix_generation import get_causal_effect
 
 num_iterations = 128
 step_limit = 30
