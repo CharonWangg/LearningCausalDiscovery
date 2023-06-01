@@ -3,7 +3,7 @@ GAME=(DonkeyKong Pitfall SpaceInvaders)
 ## generate all the simulation without perturbation
 for i in "${GAME[@]}"
 do
-    python nmos_simulation/causal_simulation/simulation_v4.py --game=$i --num_iter=
+    python nmos_simulation/causal_simulation/simulation_v4.py --game=$i --num_iter=1024
 done
 
 WINDOWS=(window_256_512 window_512_768 window_768_1024)
