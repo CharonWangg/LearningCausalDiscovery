@@ -1,4 +1,4 @@
-# [Learning Causal Discovery](https://arxiv.org/abs/2209.05598)
+# [Learning Domain-specific Causal Discovery from Time-series](https://openreview.net/pdf?id=JFaZ94tT8M)
 Could a Neural Network Understand Microprocessor?
 
 ## Table Of Contents
@@ -12,7 +12,7 @@ Causal discovery (CD) from time-varying data is important in neuroscience, medic
 and machine learning. Techniques for CD encompass randomized experiments, which are 
 generally unbiased but expensive, and algorithms such as Granger causality, 
 conditional- independence-based, structural-equation-based, and score-based methods 
-that are only ac- curate under strong assumptions made by human designers. However, 
+that are only accurate under strong assumptions made by human designers. However, 
 as demonstrated in other areas of machine learning, human expertise is often not 
 entirely accurate and tends to be outperformed in domains with abundant data. In 
 this study, we examine whether we can enhance domain-specific causal discovery for 
@@ -32,6 +32,7 @@ mkdir learning_causal_discovery
 git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_causal_discovery
 ```
 ### For MOS 6502 Simulation (Modified from and inspired by [Sim2600](https://github.com/ericmjonas/Sim2600)):  
+
 * Create a Python 2.7 env
 * Setup:
     ```
@@ -39,6 +40,22 @@ git clone https://github.com/CharonWangg/LearningCausalDiscovery.git learning_ca
     cd learning_causal_discovery/nmos_simulation && pip install -r requirements.txt
     cd learning_causal_discovery/nmos_simulation && pip install -e .
     ```
+  
+* Simulated data has been open-sourced (wget and unzip):
+  * [Donkey Kong (from half-clock 0 to 40960)](https://mos-6502.s3.us-east-2.amazonaws.com/compressed/DonkeyKong.zip)
+  * [Pitfall (from half-clock 0 to 1024)](https://mos-6502.s3.us-east-2.amazonaws.com/compressed/Pitfall.zip)
+  * [SpaceInvaders (from half-clock 0 to 1024)](https://mos-6502.s3.us-east-2.amazonaws.com/compressed/SpaceInvaders.zip)
+
+  ```
+  # take DonkeyKong.zip as an example
+  ├── DonkeyKong.zip
+  │   ├── window_0_128 # period of 128 half-clocks, from half-clock 0 to 128
+  │   │   ├── sequence_step_128_rec_30.npy # sequences of all 3510 transistors, reconstructed with a 30 within half-clock steps
+  │   │   ├── adjacency_matrix.pkl # cause-effect dictionary, {cause: [effects]}, only have unique cause, but might have effects have duplicated sequences
+  │   ├── window_256_384 # period of 128 half-clocks, from half-clock 256 to 384
+  ...
+  ```
+
 ### For NMOS 6502 Inference
 * Create a Python 3.9 env
 * Install requirements:
